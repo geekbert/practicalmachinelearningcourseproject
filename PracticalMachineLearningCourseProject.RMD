@@ -110,10 +110,10 @@ We build multiple models and compare their performance based on out of sample pr
 We researched that direct randomForest method (as opposed to carets train function) performs faster due to less built-in cross-validation. For completeness purposes, we present (but not use further) the 
 randomForest function from randomforest library:
 ibrary(randomForest)                                
-#modFitrf <- randomForest(classe ~ ., data=training, prox=TRUE, keep.forest=TRUE, importance=TRUE) 
+modFitrf <- randomForest(classe ~ ., data=training, prox=TRUE, keep.forest=TRUE, importance=TRUE) 
 In addition, with tuning parameter mtry, this function allows to choose upfront number of randomly
 selected (best) predictors. 
-#modFitrf <- randomForest(classe ~ ., data=training, mtry = 17, keep.forest=TRUE, importance=TRUE)
+modFitrf <- randomForest(classe ~ ., data=training, mtry = 17, keep.forest=TRUE, importance=TRUE)
 Again, we won't use direct randomForest method further, this is just for information purposes. 
 
 CROSS-VALIDATION 
