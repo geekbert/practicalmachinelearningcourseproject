@@ -1,0 +1,239 @@
+---
+title: "PracticalMachineLearningCourseProject.RMD"
+author: "geekbert"
+date: "Sunday, February 22, 2015"
+output: html_document
+---
+
+Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large 
+amount of data about personal activity relatively inexpensively. These type of devices are part 
+of the quantified self movement by a group of enthusiasts who take measurements about themselves 
+regularly to improve their health, to find patterns in their behavior, or because they are tech 
+geeks. One thing that people regularly do is quantify how much of a particular activity they do, 
+but they rarely quantify how well they do it. In this project, your goal will be to use data from 
+accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to 
+perform barbell lifts correctly and incorrectly in 5 different ways. More information is 
+available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the
+Weight Lifting Exercise Dataset). 
+
+Loading Data 
+```{r, eval=FALSE}
+train <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv") # 19622 obs. of  160 variables
+test <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv") # 20 obs. of  160 variables
+```
+
+Examining structures of datasets 
+```{r, eval=FALSE}
+str(train); str(test)
+summary(train); summary(test) 
+```
+It appears test set has very few factor variables as compared to train set.
+
+Next, we compare if column names in train and test set are identical
+```{r, eval=FALSE}
+colnames(train) == colnames(test) 
+```
+It appears 159 out of 160 columns are indeed same. The one difference is that "classe" in train set is replaced with "problem_id" in test set. 
+
+Evaluating for NAs
+```{r, eval=FALSE}
+colSums(is.na(train)); colSums(is.na(test));  
+```
+It appears that all columns with NA are 100% NA 
+
+```{r, eval=FALSE}
+library(plyr)
+count((colSums(is.na(train)) > 19000) == TRUE) # 67 TRUE, 93 FALSE
+count((colSums(is.na(test)) > 19) == TRUE) # 100 TRUE, 60 FALSE -> Test has more NA columns 
+```
+It appears test set has 33 more 100% NA columns and only 60 columns with actual observations. 
+
+Since our prediction is going to be on test set, we decide to take test set as our standard to 
+decide based on which columns to subset both train and test set.
+
+PRE-PROCESSING / DATA CLEANING 
+
+Removing NA variables from both test and train set
+```{r}
+train <- train[,colSums(is.na(test)) < 19] # 19622 obs. of  60 variables
+test <- test[,colSums(is.na(test)) < 19]  # 20 obs. of  60 variables
+```
+A welcome outcome of this cleaning step is that it got rid of nearly all factor variables
+in train set, so we save the work of having to perform a factor to numeric conversion 
+
+Upon reading study paper and understading approach (focus on features based on accelerometers on belt, forearm, arm, and dumbell), it was deemed that first 6 columns do not provide any signal in terms of predicting classe variable. 
+```{r}
+train <- train[,-c(1,2,3,4,5,6)] # 19622 obs. of  54 variables
+test <- test[,-c(1,2,3,4,5,6)] # 20 obs. of  54 variables:
+```
+
+EXPLORATORY ANALYSIS
+
+As far as exploratory analysis, we decide to visualize relations between all variables of certain type
+(e.g. belt, arm, dumbbell, foreram). We use belt category to demonstrate this approach. This same should be replicated for all other categories, using same approach for belt category: 
+```{r, eval=FALSE}
+pairs(train[2:14]) # All variables against each other 
+featurePlot(train[2:14], y =train$classe, plot="pairs") # Variables against 1 factor variable
+```
+
+Correlation Matrix 
+```{r}
+M <- abs(cor(train[2:14]))
+diag(M) <- 0
+#edit(M) 
+which(M>0.8, arr.ind=T)   # 8 features
+```
+At this point, we could use results of exploratory analysis to eliminate further variables. However, 
+we decide to not remove any further variables at this point, knowing that Caret's 
+Machine Learning algorithms provide some built-in feature selection. 
+
+
+MODEL BUILDING 
+
+we decide to partition train data set into training and testing set, the latter
+for cross-validation purposes
+```{r}
+library(caret)
+inTrain <- createDataPartition(y=train$classe, p=0.75, list=FALSE)
+training <- train[inTrain,] # [1] 54 variables
+testing <- train[-inTrain,] # [1] 54 variables 
+```
+
+MODEL SELECTION
+
+We build multiple models and compare their performance based on out of sample prediction error  
+
+1 RANDOM FOREST 
+
+We researched that direct randomForest method (as opposed to carets train function) performs faster due to less built-in cross-validation. For completeness purposes, we present (but not use further) the 
+randomForest function from randomforest library:
+ibrary(randomForest)                                
+#modFitrf <- randomForest(classe ~ ., data=training, prox=TRUE, keep.forest=TRUE, importance=TRUE) 
+In addition, with tuning parameter mtry, this function allows to choose upfront number of randomly
+selected (best) predictors. 
+#modFitrf <- randomForest(classe ~ ., data=training, mtry = 17, keep.forest=TRUE, importance=TRUE)
+Again, we won't use direct randomForest method further, this is just for information purposes. 
+
+CROSS-VALIDATION 
+
+To control the cross-validation method, sample count, and other variables we use trainControl() parameter. (Train() method defaults to a 10-sample bootstrap which takes longer than randomForest() because of the extra sampling). In addition, train method builds in a robust cross-validation. 
+As far as trainControl() parameters, resampling methods are for example "boot", "cv", "LOOCV", "repeatedcv", "none" and "oob", whereas number represents number of folds in K-fold cross-validation or number of resampling iterations for bootstrapping and leave-group-out cross-validation. 
+More information on trainControl can be found at: http://topepo.github.io/caret/training.html#control
+We decide on number of re-samples of 4 and choose method 'oob' (out-of-bag): 
+```{r, eval = FALSE}
+library(randomForest)
+myControl <- trainControl(method = "oob", number = 4, verboseIter = TRUE)  
+modFitrf <- train(classe ~ ., data=training, method="rf",prox=TRUE, trControl = myControl)
+modFitrf$finalModel
+```
+
+```{r, eval=FALSE}
+Call:
+# randomForest(x = x, y = y, mtry = param$mtry, proximity = TRUE) 
+               Type of random forest: classification
+                     Number of trees: 500
+No. of variables tried at each split: 27
+
+        OOB estimate of  error rate: 0.18%
+Confusion matrix:
+     A    B    C    D    E  class.error
+A 4183    1    0    0    1 0.0004778973
+B    5 2841    2    0    0 0.0024578652
+C    0    4 2562    1    0 0.0019477990
+D    0    0    7 2404    1 0.0033167496
+E    0    0    0    4 2702 0.0014781966
+
+```
+Random Forests routinely include out of sample (oob) estimate of  error rate. 
+Our random forest model reports an oob error rate estimate of 0.18%. This corresponds to actual 
+out of sample prediction error, which we will estimate next. 
+
+As good practice, we apply our model on validation data set for cross-validation purposes, even though it is technically not necessary since Random Forest includes oob estimate during model building (see above)
+```{r, eval=FALSE}
+predrf <- predict(modFitrf,testing); #testing$predRight <- pred==testing$classe
+# table(predrf,testing$classe)  
+confusionMatrix(predrf, testing$classe) # 99.88 % prediction accuracy -> 0.12% OOB error
+```
+
+```{r, eval=FALSE}
+Confusion Matrix and Statistics
+          Reference
+Prediction    A    B    C    D    E
+         A 1395    2    0    0    0
+         B    0  945    0    0    0
+         C    0    1  855    1    0
+         D    0    1    0  803    1
+         E    0    0    0    0  900
+Overall Statistics                                          
+               Accuracy : 0.9988          
+                 95% CI : (0.9973, 0.9996)
+    No Information Rate : 0.2845          
+    P-Value [Acc > NIR] : < 2.2e-16       
+                                          
+                   Kappa : 0.9985          
+ Mcnemar's Test P-Value : NA
+```
+Our random Forest model built on training set has 99.88% prediction accuracy on cross-validation 
+(testing) set. 100% - 99.88% = 0.12%. 0.12% is sufficiently close to oob error rate estimate of 0.18%
+per random Forest model built (see above)
+ 
+2 BOOSTING 
+
+We now want to compare Random Forest algorithm performance to another highly rated machine
+learning algorithm: Boosting, or gradient boosting model (gbm).
+gbm is said to be one of models with built-in feature selection. 
+Compare this link: http://topepo.github.io/caret/featureselection.html
+```{r, eval=FALSE}
+myControl <- trainControl(method = "repeatedcv", number = 4, verboseIter = TRUE)
+modFitgbm <- train(classe ~.,data=training, method="gbm", trControl = myControl, verbose = TRUE)  
+print(modFitgbm$finalModel) # There were 53 predictors of which 40 had non-zero influence
+```
+150 iterations were performed.
+There were 53 predictors of which 40 had non-zero influence.
+
+We now apply our model on validation data set for cross-validation purposes
+```{r, eval=FALSE}
+predgbm <- predict(modFitgbm,testing)
+confusionMatrix(predgbm, testing$classe) # 98.98% Accuracy  
+``` 
+
+```{r, eval=FALSE}
+Confusion Matrix and Statistics
+          Reference
+Prediction    A    B    C    D    E
+         A 1393    4    0    0    1
+         B    1  931    6    5    2
+         C    0   13  848   10    2
+         D    1    1    1  789    3
+         E    0    0    0    0  893
+Overall Statistics                                          
+               Accuracy : 0.9898          
+                 95% CI : (0.9866, 0.9924)
+    No Information Rate : 0.2845          
+    P-Value [Acc > NIR] : < 2.2e-16                                                 
+                  Kappa : 0.9871          
+Mcnemar's Test P-Value : NA           
+```
+We conclude that our Random Forest model has a slightly better performance in terms of accuracy as
+compared to Boosting for this particular problem set.  
+
+FINAL STEP: PREDICTING CLASSE ON TEST SET 
+
+As a final step, we apply machine learning algorithms we built to each of the 20 test cases in 
+test data set (see related exercise). For each test case we submit a single capital 
+letter (A, B, C, D, or E) corresponding to our prediction of classe variable for the corresponding problem in test data set. 
+```{r, eval=FALSE}                                 
+predrftest <- predict(modFitrf,test) #  B A B A A E D B A A B C B A E E A B B B # ALL CORRECT 
+predgbmtest <- predict(modFitgbm,test) #  B A B A A E D B A A B C B A E E A B B B # ALL CORRECT
+predrftest
+predgbmtest
+``` 
+```{r, eval=FALSE}
+[1] B A B A A E D B A A B C B A E E A B B B
+[1] B A B A A E D B A A B C B A E E A B B B
+```
+Conclusion: Although Random Forest has a slighlty higher accuracy compared to boosting, 
+they both do an equally good job at predicting classe variable 
+ 
